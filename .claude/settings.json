@@ -25,7 +25,11 @@
       "Bash(echo $ANTHROPIC_API_KEY)",
       "Read(//Users/davidli/**)",
       "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(list\\(d.keys\\(\\)\\)\\)\")",
-      "Read(//Users/davidli/.config/**)"
+      "Read(//Users/davidli/.config/**)",
+      "Bash(python -m pytest tests/test_pawpal.py -v)",
+      "Bash(python3 -m pytest tests/test_pawpal.py -v)",
+      "Bash(pytest tests/test_pawpal.py -v)",
+      "Bash(PYTHONPATH=. pytest tests/test_pawpal.py -v)"
     ]
   }
 }

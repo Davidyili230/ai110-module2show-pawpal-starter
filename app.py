@@ -1,4 +1,5 @@
 import streamlit as st
+from datetime import datetime, date, time
 from pawpal_system import Owner, Pet, Task, Scheduler, Frequency
 
 st.set_page_config(page_title="PawPal+", page_icon="🐾", layout="centered")
@@ -27,10 +28,9 @@ with st.form("add_pet_form"):
 
 if submitted:
     new_pet = Pet(name=pet_name, species=species, age=age)
-    owner.add_pet(new_pet)          # Owner.add_pet() keeps the Pet in memory
+    owner.add_pet(new_pet)
     st.success(f"Added {new_pet.name} the {new_pet.species}!")
 
-# Show registered pets
 if owner.pets:
     st.write("**Registered pets:**")
     for pet in owner.pets:
@@ -40,7 +40,7 @@ else:
 
 st.divider()
 
-# --- Add a Task to a Pet ---
+# --- Add a Task ---
 st.subheader("Add a Task")
 
 if not owner.pets:
@@ -53,37 +53,127 @@ else:
         task_desc = st.text_input("Task description", value="Morning walk")
         duration = st.number_input("Duration (minutes)", min_value=1, max_value=240, value=20)
         recurrence = st.selectbox("Recurrence", [f.value for f in Frequency])
+
+        col_date, col_time = st.columns(2)
+        with col_date:
+            due_date = st.date_input("Due date (optional)", value=None)
+        with col_time:
+            due_time_val = st.time_input("Due time", value=time(8, 0))
+
         task_submitted = st.form_submit_button("Add Task")
 
     if task_submitted:
         target_pet = pet_options[selected_pet_name]
+
+        due_datetime = None
+        if due_date is not None:
+            due_datetime = datetime.combine(due_date, due_time_val)
+
         new_task = Task(
             description=task_desc,
             duration_minutes=int(duration),
+            due_time=due_datetime,
             recurrence=Frequency(recurrence),
         )
-        target_pet.add_task(new_task)   # Pet.add_task() attaches the Task
-        st.success(f"Task '{task_desc}' added to {target_pet.name}.")
+
+        # Check for conflicts before committing
+        scheduler = Scheduler(owner)
+        conflict = scheduler.check_conflicts(new_task)
+
+        target_pet.add_task(new_task)
+        st.success(f"Task **'{task_desc}'** added to {target_pet.name}.")
+
+        if conflict:
+            # Strip the "WARNING: " prefix since st.warning already signals urgency
+            friendly = conflict.replace("WARNING: ", "")
+            st.warning(f"**Schedule conflict detected!** {friendly}\n\nConsider adjusting the time or duration so your pet's care doesn't overlap.")
 
 st.divider()
 
 # --- Schedule View ---
 st.subheader("Schedule")
 
-if st.button("Generate schedule"):
-    scheduler = Scheduler(owner)
-    summary = scheduler.summary()
-    upcoming = scheduler.get_upcoming_tasks()
+scheduler = Scheduler(owner)
+summary = scheduler.summary()
 
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Pets", summary["total_pets"])
-    col2.metric("Pending tasks", summary["pending"])
-    col3.metric("Completed", summary["completed"])
+col1, col2, col3 = st.columns(3)
+col1.metric("Pets", summary["total_pets"])
+col2.metric("Pending tasks", summary["pending"])
+col3.metric("Completed", summary["completed"])
 
-    if upcoming:
-        st.write("**Upcoming tasks:**")
-        for task in upcoming:
-            due = task.due_time.strftime("%Y-%m-%d %H:%M") if task.due_time else "No due time"
-            st.write(f"- **{task.description}** — {task.duration_minutes} min | due: {due} | `{task.recurrence.value}`")
+all_tasks = scheduler.get_all_tasks()
+
+if not all_tasks:
+    st.info("No tasks yet. Add some tasks to see them here.")
+else:
+    # --- Filter & sort controls ---
+    st.write("**Filter & sort**")
+    fcol1, fcol2 = st.columns(2)
+
+    with fcol1:
+        pet_filter_options = ["All pets"] + [p.name for p in owner.pets]
+        pet_filter = st.selectbox("Filter by pet", pet_filter_options, key="pet_filter")
+
+    with fcol2:
+        status_filter = st.selectbox(
+            "Filter by status",
+            ["All", "Pending", "Completed"],
+            key="status_filter",
+        )
+
+    # Apply filters
+    if pet_filter == "All pets":
+        filtered_tasks = all_tasks
+        pet_lookup = {
+            task.id: pet.name
+            for pet in owner.pets
+            for task in pet.tasks
+        }
     else:
-        st.info("No pending tasks. Add some tasks to see them here.")
+        filtered_tasks = scheduler.filter_by_pet(pet_filter)
+        pet_lookup = {task.id: pet_filter for task in filtered_tasks}
+
+    if status_filter == "Pending":
+        filtered_tasks = [t for t in filtered_tasks if not t.is_complete]
+    elif status_filter == "Completed":
+        filtered_tasks = [t for t in filtered_tasks if t.is_complete]
+
+    # Sort by due time
+    sorted_tasks = scheduler.sort_by_time(filtered_tasks)
+
+    if not sorted_tasks:
+        st.info("No tasks match your current filter.")
+    else:
+        # Build a display table
+        table_rows = []
+        for task in sorted_tasks:
+            due_str = task.due_time.strftime("%b %d, %Y  %I:%M %p") if task.due_time else "No due time"
+            table_rows.append({
+                "Pet": pet_lookup.get(task.id, "—"),
+                "Task": task.description,
+                "Duration": f"{task.duration_minutes} min",
+                "Due": due_str,
+                "Recurrence": task.recurrence.value,
+                "Status": "✅ Done" if task.is_complete else "🕐 Pending",
+            })
+
+        st.table(table_rows)
+
+        # --- Mark complete buttons ---
+        pending_tasks = [t for t in sorted_tasks if not t.is_complete]
+        if pending_tasks:
+            st.write("**Mark a task complete:**")
+            for task in pending_tasks:
+                pet_name = pet_lookup.get(task.id, "")
+                label = f"Complete: {task.description}"
+                if pet_name:
+                    label += f" ({pet_name})"
+                if task.due_time:
+                    label += f" — {task.due_time.strftime('%b %d, %I:%M %p')}"
+
+                if st.button(label, key=f"complete_{task.id}"):
+                    scheduler.mark_task_complete(task.id)
+                    st.success(f"'{task.description}' marked complete!")
+                    if task.recurrence in (Frequency.DAILY, Frequency.WEEKLY):
+                        st.info(f"Next {task.recurrence.value} occurrence has been scheduled automatically.")
+                    st.rerun()
