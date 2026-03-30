@@ -1,3 +1,4 @@
+from dataclasses import dataclass, field
 from enum import Enum
 from datetime import datetime
 from typing import Optional
@@ -10,20 +11,14 @@ class Frequency(Enum):
     WEEKLY = "weekly"
 
 
+@dataclass
 class Task:
-    def __init__(
-        self,
-        description: str,
-        duration_minutes: int,
-        due_time: Optional[datetime] = None,
-        recurrence: Frequency = Frequency.ONCE,
-    ):
-        self.id = str(uuid.uuid4())
-        self.description = description
-        self.duration_minutes = duration_minutes
-        self.due_time = due_time
-        self.recurrence = recurrence
-        self.is_complete = False
+    description: str
+    duration_minutes: int
+    due_time: Optional[datetime] = None
+    recurrence: Frequency = Frequency.ONCE
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    is_complete: bool = False
 
     def mark_complete(self):
         self.is_complete = True
@@ -33,13 +28,13 @@ class Task:
         return f"Task({self.description!r}, {self.duration_minutes}min, {status})"
 
 
+@dataclass
 class Pet:
-    def __init__(self, name: str, species: str, age: int):
-        self.id = str(uuid.uuid4())
-        self.name = name
-        self.species = species
-        self.age = age
-        self.tasks: list[Task] = []
+    name: str
+    species: str
+    age: int
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    tasks: list[Task] = field(default_factory=list)
 
     def add_task(self, task: Task):
         self.tasks.append(task)
