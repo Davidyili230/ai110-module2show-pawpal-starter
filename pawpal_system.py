@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from enum import Enum
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 import uuid
 
 
@@ -98,30 +98,90 @@ class Scheduler:
             key=lambda t: (t.due_time or datetime.max),
         )
 
+    def sort_by_time(self, tasks: Optional[List[Task]] = None) -> List[Task]:
+        """Return tasks sorted by due_time ascending; undated tasks sort last.
+
+        If *tasks* is provided, sort that list. Otherwise sort all tasks owned
+        by this scheduler's owner (including completed ones).
+        """
+        source = tasks if tasks is not None else self.get_all_tasks()
+        return sorted(source, key=lambda t: (t.due_time or datetime.max))
+
+    def filter_by_status(self, complete: bool) -> list[Task]:
+        """Return all tasks whose completion status matches *complete*."""
+        return [t for t in self.get_all_tasks() if t.is_complete == complete]
+
+    def filter_by_pet(self, pet_name: str) -> list[Task]:
+        """Return all tasks belonging to the pet whose name matches *pet_name* (case-insensitive)."""
+        for pet in self.owner.pets:
+            if pet.name.lower() == pet_name.lower():
+                return list(pet.tasks)
+        return []
+
     def mark_task_complete(self, task_id: str) -> bool:
-        """Find a task by ID and mark it complete, returning True on success."""
-        for task in self.get_all_tasks():
-            if task.id == task_id:
+        """Mark a task complete and, for daily/weekly tasks, schedule the next occurrence.
+
+        Searches each pet's task list directly so the next occurrence can be
+        attached to the correct pet using timedelta arithmetic:
+          - Frequency.DAILY  → due_time + timedelta(days=1)
+          - Frequency.WEEKLY → due_time + timedelta(weeks=1)
+
+        Returns True if the task was found and marked complete, False otherwise.
+        """
+        from datetime import timedelta
+
+        for pet in self.owner.pets:
+            for task in pet.tasks:
+                if task.id != task_id:
+                    continue
                 task.mark_complete()
+                if task.due_time is not None:
+                    if task.recurrence == Frequency.DAILY:
+                        next_due = task.due_time + timedelta(days=1)
+                    elif task.recurrence == Frequency.WEEKLY:
+                        next_due = task.due_time + timedelta(weeks=1)
+                    else:
+                        next_due = None
+                    if next_due is not None:
+                        pet.add_task(Task(
+                            description=task.description,
+                            duration_minutes=task.duration_minutes,
+                            due_time=next_due,
+                            recurrence=task.recurrence,
+                        ))
                 return True
         return False
 
-    def check_conflicts(self, task: Task) -> bool:
-        """Return True if the given task overlaps in time with any existing task."""
+    def check_conflicts(self, task: Task) -> Optional[str]:
+        """Return a warning message if the given task overlaps with any existing task, else None.
+
+        Lightweight strategy: scan all scheduled tasks and compare time windows using
+        interval-overlap arithmetic (task starts before other ends AND ends after other starts).
+        Returns the first conflict found as a human-readable string so callers can print
+        a warning without crashing.
+        """
         if task.due_time is None:
-            return False
+            return None
         task_end = datetime.fromtimestamp(
             task.due_time.timestamp() + task.duration_minutes * 60
         )
-        for existing in self.get_all_tasks():
-            if existing is task or existing.due_time is None:
-                continue
-            existing_end = datetime.fromtimestamp(
-                existing.due_time.timestamp() + existing.duration_minutes * 60
-            )
-            if task.due_time < existing_end and task_end > existing.due_time:
-                return True
-        return False
+        for pet in self.owner.pets:
+            for existing in pet.tasks:
+                if existing is task or existing.due_time is None:
+                    continue
+                existing_end = datetime.fromtimestamp(
+                    existing.due_time.timestamp() + existing.duration_minutes * 60
+                )
+                if task.due_time < existing_end and task_end > existing.due_time:
+                    return (
+                        f"WARNING: '{task.description}' "
+                        f"({task.due_time.strftime('%I:%M %p')}–"
+                        f"{task_end.strftime('%I:%M %p')}) conflicts with "
+                        f"'{existing.description}' for {pet.name} "
+                        f"({existing.due_time.strftime('%I:%M %p')}–"
+                        f"{existing_end.strftime('%I:%M %p')})"
+                    )
+        return None
 
     def generate_recurring_tasks(self) -> list[Task]:
         """Create the next occurrence for each daily or weekly recurring task."""

@@ -43,8 +43,25 @@ After asking the AI to review the skeleton, three potential issues were flagged:
 
 **b. Tradeoffs**
 
-- Describe one tradeoff your scheduler makes.
-- Why is that tradeoff reasonable for this scenario?
+**Tradeoff: global conflict detection vs. per-pet conflict detection**
+
+`Scheduler.check_conflicts()` compares a new task against every task across *all* pets. This means a dog walk at 7:00 AM and a simultaneous cat feeding at 7:00 AM register as a conflict even though they involve different animals.
+
+A more Pythonic one-liner for the core check would collapse the loop into a generator expression:
+
+```python
+# Copilot suggestion
+return next(
+    (f"WARNING: '{task.description}' conflicts with '{e.description}' for {p.name}"
+     for p in self.owner.pets for e in p.tasks
+     if e is not task and e.due_time and task.due_time < e_end(e) and task_end > e.due_time),
+    None
+)
+```
+
+This is more concise, but the nested `for` clauses and inline conditional make it harder to follow than the explicit loop — especially when a reader needs to understand *which* pet owns the conflicting task. The explicit loop was kept because clarity matters more than brevity here.
+
+**Why the global check is still reasonable:** The MVP assumes a single owner managing all pets alone. Any two overlapping tasks genuinely compete for that one person's attention, regardless of which animal they belong to. A multi-caregiver system would need per-person conflict scoping, but that is out of scope for this version.
 
 ---
 

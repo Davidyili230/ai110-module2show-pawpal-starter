@@ -22,6 +22,16 @@ Your final app should:
 - Display the plan clearly (and ideally explain the reasoning)
 - Include tests for the most important scheduling behaviors
 
+## Smarter Scheduling
+
+PawPal+ now includes three algorithmic scheduling features:
+
+- **Sorting** — `sort_by_time()` orders any list of tasks by `due_time` ascending; tasks with no due time sort to the end so urgent items always surface first.
+- **Filtering** — `filter_by_status(complete)` returns only pending or completed tasks, and `filter_by_pet(name)` scopes the task list to a single pet, making it easy to view a per-pet schedule.
+- **Conflict detection** — `check_conflicts(task)` uses interval-overlap arithmetic to scan all existing tasks before a new one is committed. If the new task's time window overlaps any existing window it returns a human-readable warning so the owner can reschedule rather than double-book.
+
+Together these features give owners a clear, ordered view of the day and prevent accidental scheduling collisions across multiple pets.
+
 ## Getting started
 
 ### Setup
