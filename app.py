@@ -37,6 +37,9 @@ At minimum, your system should:
 """
     )
 
+if "owner" not in st.session_state:
+    st.session_state.owner = Owner("Jordan")
+
 st.divider()
 
 st.subheader("Quick Demo Inputs (UI only)")
