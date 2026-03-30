@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Read(//Users/davidli/Desktop/**)",
-      "Bash(find . -not -path */.* -type f -o -type d)"
+      "Bash(find . -not -path */.* -type f -o -type d)",
+      "Bash(python main.py)",
+      "Bash(python3 main.py)"
     ]
   }
 }
